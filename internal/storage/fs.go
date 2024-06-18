@@ -2,6 +2,7 @@ package storage
 
 import (
 	// "fmt"
+	"fmt"
 	"log"
 	"mymodule/internal/object"
 	"os"
@@ -15,18 +16,17 @@ type FileSystem struct {
 }
 
 // Get stored in map object for key
-func (fs *FileSystem) GetData(key []byte) (*object.Object, error) {
-	return fs.TreeMap[string(key)], nil
+func (fs *FileSystem) GetObject(key []byte) (*object.Object, error) {
+	return fs.TreeMap[fmt.Sprintf("%x", key)], nil
 }
 
-func (fs *FileSystem) SetData(key []byte, data *object.Object) {
-	fs.TreeMap[string(key)] = data
+func (fs *FileSystem) SetObject(key []byte, data *object.Object) {
+	fs.TreeMap[fmt.Sprintf("%x", key)] = data
 }
 
 func InitFileSystem(path string) *FileSystem {
 	fs := FileSystem{
 		path,
-		// Почему не вычисляем рутовский хэш тут
 		[]byte{},
 		make(map[string]*object.Object),
 	}
@@ -38,9 +38,6 @@ func InitFileSystem(path string) *FileSystem {
 
 // Creating tree for current file system state
 func (fs *FileSystem) CreateTree(path string) *object.Object {
-	// Скорее тогда создаем дерево объетов
-	// Почему везде звездочки...
-	// Какой путь передаем в функцию 
 	stat, err := os.Stat(path)
 	if err != nil {
 		log.Panic(err)
@@ -57,10 +54,8 @@ func (fs *FileSystem) CreateTree(path string) *object.Object {
 		}
 		obj := blob.CreateObject()
 
-		fs.SetData(obj.GetHash(), obj)
+		fs.SetObject(obj.GetHash(), obj)
 		return obj
-		// После того как ретерним, дальше будет разюор дерева?
-		// Как происходит разбор 
 	}
 
 	//else collect children objects
@@ -86,7 +81,6 @@ func (fs *FileSystem) CreateTree(path string) *object.Object {
 	}
 	obj := tree.CreateObject()
 
-	fs.SetData(obj.GetHash(), obj)
+	fs.SetObject(obj.GetHash(), obj)
 	return obj
 }
-

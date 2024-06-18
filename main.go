@@ -23,9 +23,10 @@ func main() {
 func initCLI() {
 	cli = cmd.InitCLI(path)
 	scanner := bufio.NewScanner(os.Stdin)
+	fmt.Print("> ")
 	for scanner.Scan() {
-		fmt.Print("> ")
 		cli.Execute(scanner.Text())
+		fmt.Print("> ")
 	}
 }
 func cleanup() {

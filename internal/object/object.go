@@ -20,6 +20,19 @@ type Object struct {
 	Data []byte
 }
 
+func TypeToString(t uint) string {
+	switch t {
+	case TypeBlob:
+		return "Blob"
+	case TypeTree:
+		return "Tree"
+	case TypeCommit:
+		return "Commit"
+	default:
+		return ""
+	}
+}
+
 // Calculate hash of the serialized object
 func (o *Object) GetHash() []byte {
 	return CalculateHash(o.Serialize())

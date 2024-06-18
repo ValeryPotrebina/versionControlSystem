@@ -2,7 +2,7 @@ package storage
 
 import (
 	"bytes"
-	"log"
+	"fmt"
 	"mymodule/internal/object"
 	"os"
 	"time"
@@ -19,27 +19,33 @@ const MASTER_BRANCH = "master"
 // Storage of version control system
 type Storage struct {
 	DB     *badger.DB //Database for object storing
-	branch string
-	refs   map[string][]byte
+	Branch string
+	Refs   map[string][]byte
 	Path   string //Path to directory
 }
 
+type CommitData struct {
+	Hash   []byte
+	Commit *object.Commit
+}
+
 // Initialize database in path, if root hash not specified, build init file system and add data to database.
-func InitStorage(path string) Storage {
+func InitStorage(path string) (*Storage, error) {
 	if _, err := os.Open(path); os.IsNotExist(err) {
 		err := os.Mkdir(path, os.ModePerm)
 		if err != nil {
-			log.Panic(err)
+			return nil, err
 		}
 	}
 
-	opts := badger.DefaultOptions(path + "/.vcs")
+	// Disable badger logs
+	opts := badger.DefaultOptions(path + "/.vcs").WithLogger(nil)
 	db, err := badger.Open(opts)
 	if err != nil {
-		log.Panic(err)
+		return nil, err
 	}
 
-	storage := Storage{
+	storage := &Storage{
 		db,
 		"",
 		make(map[string][]byte, 0),
@@ -48,7 +54,7 @@ func InitStorage(path string) Storage {
 
 	branch, err := storage.GetData([]byte(BRANCH_KEY))
 	if err == badger.ErrKeyNotFound {
-		log.Println("BRANCH not found. Initializing BRANCH...")
+		fmt.Println("BRANCH not found. Initializing BRANCH...")
 		//create init commit
 		tree := object.Tree{
 			Children: []object.Child{},
@@ -57,7 +63,7 @@ func InitStorage(path string) Storage {
 		treeHash, treeData := treeObj.GetData()
 		err := storage.SetData(treeHash, treeData)
 		if err != nil {
-			log.Panic(err)
+			return nil, err
 		}
 		commit := object.Commit{
 			Origin:      []byte{},
@@ -70,34 +76,34 @@ func InitStorage(path string) Storage {
 		commitHash, commitData := commitObj.GetData()
 		err = storage.SetData(commitHash, commitData)
 		if err != nil {
-			log.Panic(err)
+			return nil, err
 		}
 		// fmt.Print("COMMIT-ORIGIN: ", commit.Origin)
 		//initialize branches
-		storage.branch = MASTER_BRANCH
-		storage.refs[MASTER_BRANCH] = commitHash
+		storage.Branch = MASTER_BRANCH
+		storage.Refs[MASTER_BRANCH] = commitHash
 
-		err = storage.SetData([]byte(BRANCH_KEY), []byte(storage.branch))
+		err = storage.SetData([]byte(BRANCH_KEY), []byte(storage.Branch))
 		if err != nil {
-			log.Panic(err)
+			return nil, err
 		}
-		//Не понятна шняга с ветками и рефами
-		err = storage.SetData([]byte(REFS_KEY), SerializeRefs(storage.refs))
+
+		err = storage.SetData([]byte(REFS_KEY), SerializeRefs(storage.Refs))
 		if err != nil {
-			log.Panic(err)
+			return nil, err
 		}
-		return storage
+		return storage, nil
 	}
 	refs, err := storage.GetData([]byte(REFS_KEY))
 	if err != nil {
-		log.Panic(err)
+		return nil, err
 	}
 
-	log.Printf("BRANCH found: %x", branch)
-	storage.branch = string(branch)
-	storage.refs = DeserializeRefs(refs)
+	fmt.Printf("BRANCH found: %s\n", branch)
+	storage.Branch = string(branch)
+	storage.Refs = DeserializeRefs(refs)
 
-	return storage
+	return storage, nil
 }
 
 // Get data from database for this key
@@ -134,14 +140,14 @@ func (s *Storage) CloseStorage() {
 	s.DB.Close()
 }
 
-func (s *Storage) CreateCommit(author string, description string) {
+func (s *Storage) CreateCommit(author string, description string) error {
 	fs := InitFileSystem(s.Path)
 	for _, obj := range fs.TreeMap {
 		hash, data := obj.GetData()
 		s.SetData(hash, data)
 	}
 	commit := object.Commit{
-		Origin:      s.refs[s.branch],
+		Origin:      s.Refs[s.Branch],
 		Tree:        fs.ROOT_HASH,
 		Author:      []byte(author),
 		Description: []byte(description),
@@ -151,58 +157,73 @@ func (s *Storage) CreateCommit(author string, description string) {
 	commitHash, commitData := commitObj.GetData()
 	err := s.SetData(commitHash, commitData)
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
-	s.refs[s.branch] = commitHash
-	err = s.SetData([]byte(REFS_KEY), SerializeRefs(s.refs))
-	if err != nil {
-		log.Panic(err)
-	}
+	s.Refs[s.Branch] = commitHash
+	err = s.SetData([]byte(REFS_KEY), SerializeRefs(s.Refs))
+	return err
 }
 
 // TODO поправить
-func (s *Storage) GetCommits(count int) map[string]*object.Commit {
-	commits := make(map[string]*object.Commit, 0)
-	commitHash := s.refs[s.branch]
-	for i := 0; !bytes.Equal(commitHash, []byte{}); i++ {
-		if count > 0 && i >= count {
-			break
-		}
-		objData, err := s.GetData(commitHash)
+func (s *Storage) GetCommits(branch string, count uint64) ([]*CommitData, error) {
+	commits := make([]*CommitData, 0)
+	if s.Refs[branch] == nil {
+		return commits, fmt.Errorf("branch \"%s\" does not exist", branch)
+	}
+	//hash current commit in fol branch
+	commitHash := s.Refs[branch]
+	for i := uint64(0); !bytes.Equal(commitHash, []byte{}) || (count > 0 && i >= count); i++ {
+		commitData, err := s.GetCommit(commitHash)
 		if err != nil {
-			log.Panic(err)
+			return commits, err
 		}
-		commitObj := object.DeserializeObject(objData)
-		commit, err := commitObj.ParseCommit()
-		if err != nil {
-			log.Panic(err)
-		}
-		commits[string(commitHash)] = commit
-		commitHash = commit.Origin
+		commits = append(commits, commitData)
+		// commithash assign prev commit hash
+		commitHash = commitData.Commit.Origin
 	}
 
-	return commits
+	return commits, nil
 }
 
-func (s *Storage) GetCommit(hash []byte) (*object.Commit, error) {
+func (s *Storage) GetCommit(hash []byte) (*CommitData, error) {
 	commitObj, err := s.GetObject(hash)
 	if err != nil {
 		return nil, err
 	}
 	commit, err := commitObj.ParseCommit()
-	return commit, err
+	commitData := CommitData{
+		Hash:   hash,
+		Commit: commit,
+	}
+	return &commitData, err
 }
 
 // find diffs between file system stored in database and real file system
-func (s *Storage) FindDiffs() ([]*object.FileChange, error) {
+func (s *Storage) Diffs() ([]*object.FileChange, error) {
 	fileChange := make([]*object.FileChange, 0)
 	fs := InitFileSystem(s.Path)
 	cmp := object.Comparator{
 		GetFunction1: s.GetObject,
-		GetFunction2: fs.GetData,
+		GetFunction2: fs.GetObject,
 	}
-	commitHash := s.refs[s.branch]
-	commitObj, err := s.GetObject(commitHash)
+	commitHash := s.Refs[s.Branch]
+	commit, err := s.GetCommit(commitHash)
+	if err != nil {
+		return fileChange, err
+	}
+
+	fileChange, err = cmp.CompareTrees(commit.Commit.Tree, fs.ROOT_HASH)
+
+	return fileChange, err
+}
+func (s *Storage) DiffsWithCommit(hash []byte) ([]*object.FileChange, error) {
+	fileChange := make([]*object.FileChange, 0)
+	fs := InitFileSystem(s.Path)
+	cmp := object.Comparator{
+		GetFunction1: s.GetObject,
+		GetFunction2: fs.GetObject,
+	}
+	commitObj, err := s.GetObject(hash)
 	if err != nil {
 		return fileChange, err
 	}
@@ -212,6 +233,16 @@ func (s *Storage) FindDiffs() ([]*object.FileChange, error) {
 	}
 
 	fileChange, err = cmp.CompareTrees(commit.Tree, fs.ROOT_HASH)
+
+	return fileChange, err
+}
+func (s *Storage) DiffsBetweenCommits(hash1 []byte, hash2 []byte) ([]*object.FileChange, error) {
+	cmp := object.Comparator{
+		GetFunction1: s.GetObject,
+		GetFunction2: s.GetObject,
+	}
+
+	fileChange, err := cmp.CompareCommits(hash1, hash2)
 
 	return fileChange, err
 }
@@ -231,10 +262,26 @@ func (s *Storage) SetObject(obj *object.Object) error {
 	return err
 }
 
-func (s *Storage) GetBranches() ([]string, string) {
-	branches := make([]string, 0, len(s.refs))
-	for k := range s.refs {
+func (s *Storage) GetBranches() []string {
+	branches := make([]string, 0, len(s.Refs))
+	for k := range s.Refs {
 		branches = append(branches, k)
 	}
-	return branches, s.branch
+	return branches
+}
+
+func (s *Storage) ChangeBranch(branch string) error {
+	if s.Refs[branch] == nil {
+		return fmt.Errorf("branch \"%s\" does not exist", branch)
+	}
+	s.Branch = branch
+	return nil
+}
+
+func (s *Storage) CreateBranch(branch string) error {
+	if s.Refs[branch] != nil {
+		return fmt.Errorf("branch \"%s\" already exists", branch)
+	}
+	s.Refs[branch] = s.Refs[s.Branch]
+	return nil
 }

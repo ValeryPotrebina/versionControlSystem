@@ -60,16 +60,19 @@ func (cmp *Comparator) CompareTrees(hash1 []byte, hash2 []byte) ([]*FileChange, 
 				case TypeBlob:
 					diffs, err := cmp.CompareBlobs(nil, c.Hash)
 					if err != nil {
-						return fileChanges, nil
+						return fileChanges, err
 					}
-					fileChanges = append(fileChanges, &FileChange{
-						FileName: c.Name,
-						Changes:  diffs,
-					})
+					if len(diffs) > 0 {
+						fileChanges = append(fileChanges, &FileChange{
+							FileName: c.Name,
+							Changes:  diffs,
+						})
+					}
+
 				case TypeTree:
 					changes, err := cmp.CompareTrees(nil, c.Hash)
 					if err != nil {
-						return fileChanges, nil
+						return fileChanges, err
 					}
 					for _, change := range changes {
 						change.FileName = bytes.Join([][]byte{c.Name, []byte("/"), change.FileName}, []byte(""))
@@ -86,16 +89,18 @@ func (cmp *Comparator) CompareTrees(hash1 []byte, hash2 []byte) ([]*FileChange, 
 				case TypeBlob:
 					diffs, err := cmp.CompareBlobs(c.Hash, nil)
 					if err != nil {
-						return fileChanges, nil
+						return fileChanges, err
 					}
-					fileChanges = append(fileChanges, &FileChange{
-						FileName: c.Name,
-						Changes:  diffs,
-					})
+					if len(diffs) > 0 {
+						fileChanges = append(fileChanges, &FileChange{
+							FileName: c.Name,
+							Changes:  diffs,
+						})
+					}
 				case TypeTree:
 					changes, err := cmp.CompareTrees(c.Hash, nil)
 					if err != nil {
-						return fileChanges, nil
+						return fileChanges, err
 					}
 					for _, change := range changes {
 						change.FileName = bytes.Join([][]byte{c.Name, []byte("/"), change.FileName}, []byte(""))
@@ -111,7 +116,7 @@ func (cmp *Comparator) CompareTrees(hash1 []byte, hash2 []byte) ([]*FileChange, 
 
 	for _, c1 := range t1.Children {
 		found := false
-		for _, c2 := range t1.Children {
+		for _, c2 := range t2.Children {
 			if bytes.Equal(c1.Name, c2.Name) {
 				found = true
 				if c1.Type == c2.Type {
@@ -121,10 +126,13 @@ func (cmp *Comparator) CompareTrees(hash1 []byte, hash2 []byte) ([]*FileChange, 
 						if err != nil {
 							return fileChanges, err
 						}
-						fileChanges = append(fileChanges, &FileChange{
-							FileName: c1.Name,
-							Changes:  diffs,
-						})
+						if len(diffs) > 0 {
+							fileChanges = append(fileChanges, &FileChange{
+								FileName: c1.Name,
+								Changes:  diffs,
+							})
+						}
+
 					case TypeTree:
 						changes, err := cmp.CompareTrees(c1.Hash, c2.Hash)
 						if err != nil {
@@ -144,10 +152,12 @@ func (cmp *Comparator) CompareTrees(hash1 []byte, hash2 []byte) ([]*FileChange, 
 						if err != nil {
 							return fileChanges, err
 						}
-						fileChanges = append(fileChanges, &FileChange{
-							FileName: c1.Name,
-							Changes:  diffs,
-						})
+						if len(diffs) > 0 {
+							fileChanges = append(fileChanges, &FileChange{
+								FileName: c1.Name,
+								Changes:  diffs,
+							})
+						}
 					case TypeTree:
 						changes, err := cmp.CompareTrees(c1.Hash, nil)
 						if err != nil {
@@ -165,10 +175,12 @@ func (cmp *Comparator) CompareTrees(hash1 []byte, hash2 []byte) ([]*FileChange, 
 						if err != nil {
 							return fileChanges, err
 						}
-						fileChanges = append(fileChanges, &FileChange{
-							FileName: c2.Name,
-							Changes:  diffs,
-						})
+						if len(diffs) > 0 {
+							fileChanges = append(fileChanges, &FileChange{
+								FileName: c2.Name,
+								Changes:  diffs,
+							})
+						}
 					case TypeTree:
 						changes, err := cmp.CompareTrees(nil, c2.Hash)
 						if err != nil {
@@ -191,10 +203,12 @@ func (cmp *Comparator) CompareTrees(hash1 []byte, hash2 []byte) ([]*FileChange, 
 				if err != nil {
 					return fileChanges, err
 				}
-				fileChanges = append(fileChanges, &FileChange{
-					FileName: c1.Name,
-					Changes:  diffs,
-				})
+				if len(diffs) > 0 {
+					fileChanges = append(fileChanges, &FileChange{
+						FileName: c1.Name,
+						Changes:  diffs,
+					})
+				}
 			case TypeTree:
 				changes, err := cmp.CompareTrees(c1.Hash, nil)
 				if err != nil {
@@ -223,10 +237,12 @@ func (cmp *Comparator) CompareTrees(hash1 []byte, hash2 []byte) ([]*FileChange, 
 				if err != nil {
 					return fileChanges, err
 				}
-				fileChanges = append(fileChanges, &FileChange{
-					FileName: c2.Name,
-					Changes:  diffs,
-				})
+				if len(diffs) > 0 {
+					fileChanges = append(fileChanges, &FileChange{
+						FileName: c2.Name,
+						Changes:  diffs,
+					})
+				}
 			case TypeTree:
 				changes, err := cmp.CompareTrees(nil, c2.Hash)
 				if err != nil {
