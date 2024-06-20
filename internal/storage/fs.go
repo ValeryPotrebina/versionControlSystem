@@ -3,7 +3,6 @@ package storage
 import (
 	// "fmt"
 	"fmt"
-	"log"
 	"mymodule/internal/object"
 	"os"
 )
@@ -24,63 +23,88 @@ func (fs *FileSystem) SetObject(key []byte, data *object.Object) {
 	fs.TreeMap[fmt.Sprintf("%x", key)] = data
 }
 
-func InitFileSystem(path string) *FileSystem {
-	fs := FileSystem{
+func InitFileSystem(path string) (*FileSystem, error) {
+	fs := &FileSystem{
 		path,
 		[]byte{},
 		make(map[string]*object.Object),
 	}
-	rootTree := fs.CreateTree(path)
-	fs.ROOT_HASH = rootTree.GetHash()
+	rootTree, err := fs.CreateTree(path)
+	if err != nil {
+		return nil, err
+	}
+	hash, err := rootTree.GetHash()
+	if err != nil {
+		return nil, err
+	}
+	fs.ROOT_HASH = hash
 	// fmt.Println("ROOT_HASH: ", fs.ROOT_HASH)
-	return &fs
+	return fs, nil
 }
 
 // Creating tree for current file system state
-func (fs *FileSystem) CreateTree(path string) *object.Object {
+func (fs *FileSystem) CreateTree(path string) (*object.Object, error) {
 	stat, err := os.Stat(path)
 	if err != nil {
-		log.Panic(err)
+
+		return nil, err
 	}
 
 	//if path is file create Blob object
 	if !stat.IsDir() {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			log.Panic(err)
+			return nil, err
 		}
 		blob := object.Blob{
 			Data: data,
 		}
 		obj := blob.CreateObject()
 
-		fs.SetObject(obj.GetHash(), obj)
-		return obj
+		hash, err := obj.GetHash()
+		if err != nil {
+			return nil, err
+		}
+		fs.SetObject(hash, obj)
+		return obj, nil
 	}
 
 	//else collect children objects
 	entries, err := os.ReadDir(path)
 	if err != nil {
-		log.Panic(err)
+		return nil, err
 	}
 	children := make([]object.Child, 0)
 	for _, e := range entries {
 		if e.Name() == ".vcs" {
 			continue
 		}
-		obj := fs.CreateTree(path + "/" + e.Name())
+		obj, err := fs.CreateTree(path + "/" + e.Name())
+		if err != nil {
+			return nil, err
+		}
+		hash, err := obj.GetHash()
+		if err != nil {
+			return nil, err
+		}
 		children = append(children, object.Child{
 			Type: obj.Type,
 			Name: []byte(e.Name()),
-			Hash: obj.GetHash(),
+			Hash: hash,
 		})
 	}
 	//and create tree object with that children
 	tree := object.Tree{
 		Children: children,
 	}
-	obj := tree.CreateObject()
-
-	fs.SetObject(obj.GetHash(), obj)
-	return obj
+	obj, err := tree.CreateObject()
+	if err != nil {
+		return nil, err
+	}
+	hash, err := obj.GetHash()
+	if err != nil {
+		return nil, err
+	}
+	fs.SetObject(hash, obj)
+	return obj, nil
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
-	"log"
 )
 
 // The object type.
@@ -34,38 +33,47 @@ func TypeToString(t uint) string {
 }
 
 // Calculate hash of the serialized object
-func (o *Object) GetHash() []byte {
-	return CalculateHash(o.Serialize())
+func (o *Object) GetHash() ([]byte, error) {
+	data, err := o.Serialize()
+	if err != nil {
+		return nil, err
+	}
+	return CalculateHash(data), nil
 }
 
 // Get pair of hash and zipped data of object
-func (o *Object) GetData() (hash []byte, data []byte) {
-	b := o.Serialize()
+func (o *Object) GetData() (hash []byte, data []byte, err error) {
+	var b []byte
+	b, err = o.Serialize()
+	if err != nil {
+		return
+	}
 	hash = CalculateHash(b)
-	data = Zip(b)
+	data, err = Zip(b)
 	return
 }
 
 // Serialize object
-func (o *Object) Serialize() []byte {
+func (o *Object) Serialize() ([]byte, error) {
 	var b bytes.Buffer
 	encoder := gob.NewEncoder(&b)
 	err := encoder.Encode(o)
-	if err != nil {
-		log.Panic(err)
-	}
-	return b.Bytes()
+	return b.Bytes(), err
 }
 
 // Deserialize data into object
-func DeserializeObject(data []byte) *Object {
+func DeserializeObject(data []byte) (*Object, error) {
 	var obj Object
-	decoder := gob.NewDecoder(bytes.NewReader(Unzip(data)))
-	err := decoder.Decode(&obj)
+	unzipData, err := Unzip(data)
 	if err != nil {
-		log.Panic(err)
+		return nil, err
 	}
-	return &obj
+	decoder := gob.NewDecoder(bytes.NewReader(unzipData))
+	err = decoder.Decode(&obj)
+	if err != nil {
+		return nil, err
+	}
+	return &obj, nil
 }
 
 // Unpack object into tree if it is possible
@@ -73,7 +81,7 @@ func (o *Object) ParseTree() (*Tree, error) {
 	if o.Type != TypeTree {
 		return nil, errors.New("Object is not tree")
 	}
-	return DeserializeTree(o.Data), nil
+	return DeserializeTree(o.Data)
 }
 
 // Unpack object into blob if it is possible
@@ -89,5 +97,6 @@ func (o *Object) ParseCommit() (*Commit, error) {
 	if o.Type != TypeCommit {
 		return nil, errors.New("Object is not commit")
 	}
-	return DeserializeCommit(o.Data), nil
+	return DeserializeCommit(o.Data)
+
 }

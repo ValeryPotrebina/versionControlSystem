@@ -12,5 +12,3 @@ func (b *Blob) CreateObject() *Object {
 		b.Data,
 	}
 }
-
-

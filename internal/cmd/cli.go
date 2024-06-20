@@ -31,12 +31,6 @@ func InitCLI(path string) *CLI {
 	return &cli
 }
 
-func (cli *CLI) Exit() {
-	fmt.Println("Closing database...")
-	cli.Storage.CloseStorage()
-	fmt.Println("Exit")
-}
-
 func (cli *CLI) Execute(command string) {
 	commandSplit, err := shlex.Split(command)
 	if err != nil {
@@ -49,7 +43,15 @@ func (cli *CLI) Execute(command string) {
 	args := commandSplit[1:]
 	switch cmd {
 	case "help":
-		fmt.Println("help")
+		fmt.Printf("Available command:\n")
+		fmt.Printf("  %-8s - show help\n", "help")
+		fmt.Printf("  %-8s - create new commit\n", "commit")
+		fmt.Printf("  %-8s - show info about branches\n", "branch")
+		fmt.Printf("  %-8s - switch branches\n", "checkout")
+		fmt.Printf("  %-8s - show differences between versions\n", "diff")
+		fmt.Printf("  %-8s - show info about objects\n", "show")
+		fmt.Printf("  %-8s - exit program\n", "exit")
+
 		return
 	case "diff":
 		cli.diff(args)
@@ -75,7 +77,144 @@ func (cli *CLI) Execute(command string) {
 		return
 	}
 }
+func (cli *CLI) commit(args []string) {
+	if len(args) == 0 {
+		fmt.Printf("Wrong usage of commit. Type \"commit -h\" for help.\n")
+		return
+	}
+	var author string = ""
+	var description string = ""
 
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "-h", "--help":
+			fmt.Printf("usage: commit\n")
+			fmt.Printf("   or: commit -d <description>\n")
+			fmt.Printf("   or: commit -a <author> -d <description>\n")
+			fmt.Printf("\n")
+			fmt.Printf("Available options\n")
+			fmt.Printf("  %-16s    show help (this message)\n", "-h --help")
+			fmt.Printf("  %-16s    set commit's author \n", "-a --author")
+			fmt.Printf("  %-16s    default - current username\n", "")
+			fmt.Printf("  %-16s    set commit's description\n", "-d --description")
+			fmt.Printf("  %-16s    default - \"\"\n", "")
+
+			return
+		case "-a", "--author":
+			if i+1 >= len(args) {
+				fmt.Printf("Wrong usage of argument %s. Type \"commit -h\" for help.\n", arg)
+				return
+			}
+			author = args[i+1]
+			i++
+		case "-d", "--description":
+			if i+1 >= len(args) {
+				fmt.Printf("Wrong usage of argument %s. Type \"commit -h\" for help.\n", arg)
+				return
+			}
+			description = args[i+1]
+			i++
+		default:
+			fmt.Printf("Unknown argument %s. Type \"commit -h\" for help.\n", arg)
+			return
+		}
+	}
+	if author == "" {
+		user, err := user.Current()
+		if err != nil {
+			fmt.Printf("User is not specified. Type \"commit -h\" for help.\n")
+		}
+		author = user.Username
+	}
+	err := cli.Storage.CreateCommit(author, description)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+	fmt.Println("Commit created")
+}
+func (cli *CLI) branch(args []string) {
+	if len(args) == 0 {
+		branches := cli.Storage.GetBranches()
+		for _, branch := range branches {
+			fmt.Printf("%s", branch)
+			if branch == cli.Storage.Branch {
+				fmt.Printf(" (current)")
+			}
+			fmt.Printf("\n")
+		}
+		return
+	}
+	var branch string = ""
+	var count uint64 = 5
+	var verbose bool = false
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "-h", "--help":
+			fmt.Printf("usage: branch\n")
+			fmt.Printf("   or: branch <branch>\n")
+			fmt.Printf("   or: branch <branch> -c <count>\n")
+			fmt.Printf("   or: branch <branch> -a -v\n")
+			fmt.Printf("\n")
+			fmt.Printf("Available options\n")
+			fmt.Printf("  %-12s    show help (this message)\n", "-h --help")
+			fmt.Printf("  %-12s    enable verbose output\n", "-v --verbose")
+			fmt.Printf("  %-12s    show all commits\n", "-a --all")
+			fmt.Printf("  %-12s    set commit's limit\n", "-c --count")
+			fmt.Printf("  %-12s    default: \"5\"\n", "")
+			return
+		case "-a", "--all":
+			count = 0
+		case "-c", "--count":
+			if i+1 >= len(args) {
+				fmt.Printf("Wrong usage of argument %s. Type \"branch -h\" for help.\n", arg)
+				return
+			}
+			c, err := strconv.ParseUint(args[i+1], 10, 64)
+			if err != nil {
+				fmt.Println(err.Error())
+			}
+			count = c
+			i++
+		case "-v", "--verbose":
+			verbose = true
+		default:
+			if branch == "" {
+				branch = arg
+			} else {
+				fmt.Printf("Unknown argument %s. Type \"branch -h\" for help.\n", arg)
+				return
+			}
+		}
+	}
+	if branch == "" {
+		branch = cli.Storage.Branch
+	}
+	commits, err := cli.Storage.GetCommits(branch, count)
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+	fmt.Printf("Branch: %s\n", branch)
+	fmt.Printf("\n---------------------------------------------------------------------------\n\n")
+	for i, commitData := range commits {
+		if verbose {
+			fmt.Printf("Commit:        %x\n", commitData.Hash)
+			fmt.Printf("Description:   %s\n", commitData.Commit.Description)
+			fmt.Printf("Author:        %s\n", commitData.Commit.Author)
+			fmt.Printf("Time:          %s\n", time.Unix(commitData.Commit.Time, 0).Format("02.01.2006 15:04:05"))
+			fmt.Printf("Origin:        %x\n", commitData.Commit.Origin)
+			fmt.Printf("Tree:          %x\n", commitData.Commit.Tree)
+			if i != len(commits)-1 {
+				fmt.Printf("\n---------------------------------------------------------------------------\n\n")
+			}
+		} else {
+			fmt.Printf("%x\n", commitData.Hash)
+		}
+	}
+}
 func (cli *CLI) diff(args []string) {
 	var verbose bool = false
 	hashes := make([][]byte, 0)
@@ -84,6 +223,14 @@ func (cli *CLI) diff(args []string) {
 		arg := args[i]
 		switch arg {
 		case "-h", "--help":
+			fmt.Printf("usage: diff\n")
+			fmt.Printf("   or: diff -v\n")
+			fmt.Printf("   or: diff <commit>\n")
+			fmt.Printf("   or: diff <commit1> <commit2>\n")
+			fmt.Printf("\n")
+			fmt.Printf("Available options\n")
+			fmt.Printf("  %-12s    show help (this message)\n", "-h --help")
+			fmt.Printf("  %-12s    enable verbose output\n", "-v --verbose")
 			return
 		case "-v", "--verbose":
 			verbose = true
@@ -164,6 +311,12 @@ func (cli *CLI) checkout(args []string) {
 		arg := args[i]
 		switch arg {
 		case "-h", "--help":
+			fmt.Printf("usage: chechout <branch>\n")
+			fmt.Printf("   or: chechout -b <branch>\n")
+			fmt.Printf("\n")
+			fmt.Printf("Available options\n")
+			fmt.Printf("  %-9s    show help (this message)\n", "-h --help")
+			fmt.Printf("  %-9s    Create branch and switch\n", "-b")
 			return
 		case "-b":
 			b = true
@@ -191,16 +344,41 @@ func (cli *CLI) checkout(args []string) {
 		fmt.Println(err.Error())
 	}
 	fmt.Printf("Current branch is %s.\n", cli.Storage.Branch)
-
 }
 func (cli *CLI) show(args []string) {
 	if len(args) == 0 {
 		fmt.Printf("Wrong usage of show. Type \"show -h\" for help.\n")
 		return
 	}
-	hash, err := hex.DecodeString(args[0])
-	if err != nil {
-		fmt.Printf("%s is not hash", hash)
+
+	var hash []byte = nil
+	var err error
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "-h", "--help":
+			fmt.Printf("usage: show <hash>\n")
+			fmt.Printf("\n")
+			fmt.Printf("Available options\n")
+			fmt.Printf("  %-9s    show help (this message)\n", "-h --help")
+			return
+		default:
+			if hash == nil {
+				hash, err = hex.DecodeString(arg)
+				if err != nil {
+					fmt.Printf("%s is not hash", arg)
+					return
+				}
+			} else {
+				fmt.Printf("Unknown argument %s. Type \"show -h\" for help.\n", arg)
+				return
+			}
+		}
+	}
+
+	if hash == nil {
+		fmt.Printf("Wrong usage of show. Type \"show -h\" for help.\n")
 		return
 	}
 	obj, err := cli.Storage.GetObject(hash)
@@ -243,123 +421,10 @@ func (cli *CLI) show(args []string) {
 		fmt.Printf("Origin:        %x\n", commit.Origin)
 		fmt.Printf("Tree:          %x\n", commit.Tree)
 	}
-
 }
 
-func (cli *CLI) commit(args []string) {
-	if len(args) == 0 {
-		fmt.Printf("Wrong usage of commit. Type \"commit -h\" for help.\n")
-		return
-	}
-	var author string = ""
-	var description string = ""
-
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch arg {
-		case "-h", "--help":
-			return
-		case "-a", "--author":
-			if i+1 >= len(args) {
-				fmt.Printf("Wrong usage of argument %s. Type \"commit -h\" for help.\n", arg)
-				return
-			}
-			author = args[i+1]
-			i++
-		case "-d", "--description":
-			if i+1 >= len(args) {
-				fmt.Printf("Wrong usage of argument %s. Type \"commit -h\" for help.\n", arg)
-				return
-			}
-			description = args[i+1]
-			i++
-		default:
-			fmt.Printf("Unknown argument %s. Type \"commit -h\" for help.\n", arg)
-			return
-		}
-	}
-	if author == "" {
-		user, err := user.Current()
-		if err != nil {
-			fmt.Printf("User is not specified. Type \"commit -h\" for help.\n")
-		}
-		author = user.Username
-	}
-	err := cli.Storage.CreateCommit(author, description)
-	if err != nil {
-		fmt.Println(err.Error())
-	}
-	fmt.Println("Commit created")
-}
-
-func (cli *CLI) branch(args []string) {
-	if len(args) == 0 {
-		branches := cli.Storage.GetBranches()
-		for _, branch := range branches {
-			fmt.Printf("%s", branch)
-			if branch == cli.Storage.Branch {
-				fmt.Printf(" (current)")
-			}
-			fmt.Printf("\n")
-		}
-		return
-	}
-	var branch string = ""
-	var count uint64 = 5
-	var verbose bool = false
-
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch arg {
-		case "-h", "--help":
-			return
-		case "-a", "--all":
-			count = 0
-		case "-c", "--count":
-			if i+1 >= len(args) {
-				fmt.Printf("Wrong usage of argument %s. Type \"branch -h\" for help.\n", arg)
-				return
-			}
-			c, err := strconv.ParseUint(args[i+1], 10, 64)
-			if err != nil {
-				fmt.Println(err.Error())
-			}
-			count = c
-			i++
-		case "-v", "--verbose":
-			verbose = true
-		default:
-			if branch == "" {
-				branch = arg
-			} else {
-				fmt.Printf("Unknown argument %s. Type \"branch -h\" for help.\n", arg)
-				return
-			}
-		}
-	}
-	if branch == "" {
-		branch = cli.Storage.Branch
-	}
-	commits, err := cli.Storage.GetCommits(branch, count)
-	if err != nil {
-		fmt.Println(err.Error())
-		return
-	}
-	fmt.Printf("Branch: %s\n", branch)
-	fmt.Printf("\n---------------------------------------------------------------------------\n\n")
-	for i, commitData := range commits {
-		if verbose {
-			fmt.Printf("Commit:        %x\n", commitData.Hash)
-			fmt.Printf("Description:   %s\n", commitData.Commit.Description)
-			fmt.Printf("Author:        %s\n", commitData.Commit.Author)
-			fmt.Printf("Time:          %s\n", time.Unix(commitData.Commit.Time, 0).Format("02.01.2006 15:04:05"))
-			fmt.Printf("Origin:        %x\n", commitData.Commit.Origin)
-			fmt.Printf("Tree:          %x\n", commitData.Commit.Tree)
-			if i != len(commits)-1 {
-				fmt.Printf("\n---------------------------------------------------------------------------\n\n")
-			}
-		} else {
-			fmt.Printf("%x\n", commitData.Hash)
-		}
-	}
+func (cli *CLI) Exit() {
+	fmt.Println("Closing database...")
+	cli.Storage.CloseStorage()
+	fmt.Println("Exit")
 }

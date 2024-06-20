@@ -59,9 +59,15 @@ func InitStorage(path string) (*Storage, error) {
 		tree := object.Tree{
 			Children: []object.Child{},
 		}
-		treeObj := tree.CreateObject()
-		treeHash, treeData := treeObj.GetData()
-		err := storage.SetData(treeHash, treeData)
+		treeObj, err := tree.CreateObject()
+		if err != nil {
+			return nil, err
+		}
+		treeHash, treeData, err := treeObj.GetData()
+		if err != nil {
+			return nil, err
+		}
+		err = storage.SetData(treeHash, treeData)
 		if err != nil {
 			return nil, err
 		}
@@ -72,8 +78,14 @@ func InitStorage(path string) (*Storage, error) {
 			Time:        time.Now().Unix(),
 			Description: []byte(INITIAL_COMMIT),
 		}
-		commitObj := commit.CreateObject()
-		commitHash, commitData := commitObj.GetData()
+		commitObj, err := commit.CreateObject()
+		if err != nil {
+			return nil, err
+		}
+		commitHash, commitData, err := commitObj.GetData()
+		if err != nil {
+			return nil, err
+		}
 		err = storage.SetData(commitHash, commitData)
 		if err != nil {
 			return nil, err
@@ -88,20 +100,28 @@ func InitStorage(path string) (*Storage, error) {
 			return nil, err
 		}
 
-		err = storage.SetData([]byte(REFS_KEY), SerializeRefs(storage.Refs))
+		refsData, err := SerializeRefs(storage.Refs)
+		if err != nil {
+			return nil, err
+		}
+		err = storage.SetData([]byte(REFS_KEY), refsData)
 		if err != nil {
 			return nil, err
 		}
 		return storage, nil
 	}
-	refs, err := storage.GetData([]byte(REFS_KEY))
+	refsData, err := storage.GetData([]byte(REFS_KEY))
 	if err != nil {
 		return nil, err
 	}
 
 	fmt.Printf("BRANCH found: %s\n", branch)
 	storage.Branch = string(branch)
-	storage.Refs = DeserializeRefs(refs)
+	refs, err := DeserializeRefs(refsData)
+	if err != nil {
+		return nil, err
+	}
+	storage.Refs = refs
 
 	return storage, nil
 }
@@ -141,9 +161,15 @@ func (s *Storage) CloseStorage() {
 }
 
 func (s *Storage) CreateCommit(author string, description string) error {
-	fs := InitFileSystem(s.Path)
+	fs, err := InitFileSystem(s.Path)
+	if err != nil {
+		return err
+	}
 	for _, obj := range fs.TreeMap {
-		hash, data := obj.GetData()
+		hash, data, err := obj.GetData()
+		if err != nil {
+			return err
+		}
 		s.SetData(hash, data)
 	}
 	commit := object.Commit{
@@ -153,14 +179,24 @@ func (s *Storage) CreateCommit(author string, description string) error {
 		Description: []byte(description),
 		Time:        time.Now().Unix(),
 	}
-	commitObj := commit.CreateObject()
-	commitHash, commitData := commitObj.GetData()
-	err := s.SetData(commitHash, commitData)
+	commitObj, err := commit.CreateObject()
+	if err != nil {
+		return err
+	}
+	commitHash, commitData, err := commitObj.GetData()
+	if err != nil {
+		return err
+	}
+	err = s.SetData(commitHash, commitData)
 	if err != nil {
 		return err
 	}
 	s.Refs[s.Branch] = commitHash
-	err = s.SetData([]byte(REFS_KEY), SerializeRefs(s.Refs))
+	refsData, err := SerializeRefs(s.Refs)
+	if err != nil {
+		return err
+	}
+	err = s.SetData([]byte(REFS_KEY), refsData)
 	return err
 }
 
@@ -201,7 +237,10 @@ func (s *Storage) GetCommit(hash []byte) (*CommitData, error) {
 // find diffs between file system stored in database and real file system
 func (s *Storage) Diffs() ([]*object.FileChange, error) {
 	fileChange := make([]*object.FileChange, 0)
-	fs := InitFileSystem(s.Path)
+	fs, err := InitFileSystem(s.Path)
+	if err != nil {
+		return nil, err
+	}
 	cmp := object.Comparator{
 		GetFunction1: s.GetObject,
 		GetFunction2: fs.GetObject,
@@ -218,7 +257,10 @@ func (s *Storage) Diffs() ([]*object.FileChange, error) {
 }
 func (s *Storage) DiffsWithCommit(hash []byte) ([]*object.FileChange, error) {
 	fileChange := make([]*object.FileChange, 0)
-	fs := InitFileSystem(s.Path)
+	fs, err := InitFileSystem(s.Path)
+	if err != nil {
+		return nil, err
+	}
 	cmp := object.Comparator{
 		GetFunction1: s.GetObject,
 		GetFunction2: fs.GetObject,
@@ -252,13 +294,15 @@ func (s *Storage) GetObject(key []byte) (*object.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	obj := object.DeserializeObject(objData)
-	return obj, nil
+	return object.DeserializeObject(objData)
 }
 
 func (s *Storage) SetObject(obj *object.Object) error {
-	objKey, objData := obj.GetData()
-	err := s.SetData(objKey, objData)
+	objKey, objData, err := obj.GetData()
+	if err != nil {
+		return err
+	}
+	err = s.SetData(objKey, objData)
 	return err
 }
 
