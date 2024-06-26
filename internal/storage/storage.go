@@ -127,7 +127,6 @@ func InitStorage(path string) (*Storage, error) {
 }
 
 // Get data from database for this key
-// Что является ключом то....то бранч, то что-то еще судя по коду
 func (s *Storage) GetData(key []byte) ([]byte, error) {
 	var hash []byte
 
@@ -208,7 +207,7 @@ func (s *Storage) GetCommits(branch string, count uint64) ([]*CommitData, error)
 	}
 	//hash current commit in fol branch
 	commitHash := s.Refs[branch]
-	for i := uint64(0); !bytes.Equal(commitHash, []byte{}) || (count > 0 && i >= count); i++ {
+	for i := uint64(0); !bytes.Equal(commitHash, []byte{}) && (count == 0 || i < count); i++ {
 		commitData, err := s.GetCommit(commitHash)
 		if err != nil {
 			return commits, err
@@ -319,6 +318,10 @@ func (s *Storage) ChangeBranch(branch string) error {
 		return fmt.Errorf("branch \"%s\" does not exist", branch)
 	}
 	s.Branch = branch
+	err := s.SetData([]byte(BRANCH_KEY), []byte(s.Branch))
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -327,5 +330,13 @@ func (s *Storage) CreateBranch(branch string) error {
 		return fmt.Errorf("branch \"%s\" already exists", branch)
 	}
 	s.Refs[branch] = s.Refs[s.Branch]
+	refsData, err := SerializeRefs(s.Refs)
+	if err != nil {
+		return err
+	}
+	err = s.SetData([]byte(REFS_KEY), refsData)
+	if err != nil {
+		return err
+	}
 	return nil
 }

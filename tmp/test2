@@ -1,0 +1,12 @@
+type Blob struct {
+	Data []byte
+	hash []byte
+}
+
+// Create object for blob
+func (b *Blob) CreateObject(hash []byte) *Object {
+	return &Object{
+		TypeBlob,
+		b.Data,
+	}
+}

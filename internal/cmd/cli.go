@@ -299,9 +299,10 @@ func (cli *CLI) diff(args []string) {
 		}
 	}
 }
+
 func (cli *CLI) checkout(args []string) {
 	if len(args) == 0 {
-		fmt.Printf("Wrong usage of commit. Type \"chechout -h\" for help.\n")
+		fmt.Printf("Wrong usage of checkout. Type \"checkout -h\" for help.\n")
 		return
 	}
 
@@ -311,8 +312,8 @@ func (cli *CLI) checkout(args []string) {
 		arg := args[i]
 		switch arg {
 		case "-h", "--help":
-			fmt.Printf("usage: chechout <branch>\n")
-			fmt.Printf("   or: chechout -b <branch>\n")
+			fmt.Printf("usage: checkout <branch>\n")
+			fmt.Printf("   or: checkout -b <branch>\n")
 			fmt.Printf("\n")
 			fmt.Printf("Available options\n")
 			fmt.Printf("  %-9s    show help (this message)\n", "-h --help")
@@ -320,18 +321,18 @@ func (cli *CLI) checkout(args []string) {
 			return
 		case "-b":
 			b = true
-			return
 		default:
 			if branch == "" {
 				branch = arg
 			} else {
-				fmt.Printf("Unknown argument %s. Type \"chechout -h\" for help.\n", arg)
+				fmt.Printf("Unknown argument %s. Type \"checkout -h\" for help.\n", arg)
 				return
 			}
 		}
 	}
 	if branch == "" {
-		fmt.Printf("Branch name is not specified. Type \"chechout -h\" for help.\n")
+		fmt.Printf("Branch name is not specified. Type \"checkout -h\" for help.\n")
+		return
 	}
 	if b {
 		err := cli.Storage.CreateBranch(branch)
